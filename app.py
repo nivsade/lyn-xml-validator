@@ -1,0 +1,210 @@
+from __future__ import annotations
+
+from pathlib import Path
+from account_lookup import load_accounts
+
+import pandas as pd
+import streamlit as st
+
+from excel_service import build_excel
+from xml_service import (
+    build_employee_summary,
+    extract_contributions,
+    extract_fund_deposits,
+    load_xsd,
+    to_bytes,
+    validate_and_repair,
+    validate_xsd,
+)
+
+BASE_DIR = Path(__file__).resolve().parent
+XSD_PATH = BASE_DIR / "mimshak_maasikim_shotef_xsd_schema_006.xsd.xml"
+ACCOUNTS_PATH = BASE_DIR / "accounts.xlsx"
+st.set_page_config(page_title="LYN XML Fix", page_icon="✅", layout="wide")
+st.markdown(
+    """
+    <style>
+    html, body, [class*='css'] {direction: rtl;}
+    [data-testid='stDataFrame'] {direction: rtl;}
+    .block-container {padding-top: 2rem; max-width: 1250px;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.title("תיקון קובץ XML והפקת טבלת עובדים")
+st.caption("מעלים קובץ XML/DAT ומקבלים קובץ מתוקן ו-Excel עם העובדים וההפרשות.")
+
+with st.sidebar:
+    st.header("הגדרות")
+    employer_option = st.selectbox("סוג מעסיק", ["ללא שינוי", "ח.פ – קוד 1", "עוסק מורשה – קוד 5"])
+    employer_type = {"ח.פ – קוד 1": "1", "עוסק מורשה – קוד 5": "5"}.get(employer_option)
+    last_deposit_option = st.selectbox("הפקדה אחרונה כשחסר השדה", ["2 – כן", "1 – לא"])
+    last_deposit = last_deposit_option.split(" ")[0]
+    repair_banks = st.checkbox("לתקן שדות בנק שערכם 0", value=True)
+
+uploaded = st.file_uploader("בחר קובץ XML או DAT", type=["xml", "dat", "DAT"])
+
+if not uploaded:
+    st.info("יש להעלות קובץ כדי להתחיל.")
+    st.stop()
+
+try:
+    schema = load_xsd(XSD_PATH)
+except Exception as exc:
+    st.error(f"לא ניתן לטעון את קובץ ה-XSD: {exc}")
+    st.stop()
+try:
+    accounts = load_accounts(ACCOUNTS_PATH)
+except Exception as exc:
+    st.error(f"לא ניתן לטעון את קובץ חשבונות הקופות: {exc}")
+    st.stop()
+
+try:
+    original_tree = __import__("xml_service").parse_xml(uploaded.getvalue())
+    original_errors = validate_xsd(original_tree, schema)
+    fixed_tree, changes = validate_and_repair(
+    uploaded.getvalue(),
+    employer_id_type=employer_type,
+    last_deposit_default=last_deposit,
+    repair_bank_zeroes=repair_banks,
+    accounts=accounts,
+    )
+    final_errors = validate_xsd(fixed_tree, schema)
+except Exception as exc:
+    st.error(f"לא ניתן לקרוא או לעבד את הקובץ: {exc}")
+    st.stop()
+
+contribution_rows = extract_contributions(fixed_tree)
+employee_rows = build_employee_summary(contribution_rows)
+change_rows = [c.to_dict() for c in changes]
+
+fund_rows = extract_fund_deposits(
+    fixed_tree,
+    accounts,
+)
+
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("עובדים", len(employee_rows))
+c2.metric("רשומות הפרשה", len(contribution_rows))
+c3.metric("תיקונים שבוצעו", len(changes))
+c4.metric("שגיאות XSD שנותרו", len(final_errors))
+
+if not final_errors:
+    if changes:
+        st.success("הקובץ תוקן ועבר בהצלחה אימות מלא מול XSD גרסה 006.")
+    else:
+        st.success("הקובץ כבר תקין ועבר בהצלחה אימות מלא מול XSD גרסה 006.")
+else:
+    st.warning("בוצעו תיקונים אוטומטיים, אך נשארו שגיאות XSD שלא ניתן לתקן ללא מידע נוסף. ניתן לראות אותן בלשונית השגיאות.")
+
+fixed_xml = to_bytes(fixed_tree)
+excel_bytes = build_excel(employee_rows, contribution_rows, change_rows, final_errors)
+base = uploaded.name.rsplit(".", 1)[0]
+
+b1, b2 = st.columns(2)
+with b1:
+    st.download_button(
+        "הורדת XML/DAT מתוקן",
+        data=fixed_xml,
+        file_name=uploaded.name,
+        mime="application/xml",
+        use_container_width=True,
+        type="primary",
+    )
+with b2:
+    st.download_button(
+        "הורדת Excel עובדים והפרשות",
+        data=excel_bytes,
+        file_name=f"{base}_EMPLOYEES_AND_CONTRIBUTIONS.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
+
+tab1, tab2, tab3, tab4, tab5 = st.tabs(
+    [
+        "סיכום קופות והפקדות",
+        "סיכום עובדים",
+        "פירוט הפרשות",
+        "תיקונים",
+        "שגיאות XSD",
+    ]
+)
+with tab1:
+    if fund_rows:
+        fund_df = pd.DataFrame(fund_rows)
+
+        preferred_columns = [
+            "שם קופה",
+            "סכום להפקדה",
+            "פרטי חשבון",
+            "מספר קופה",
+            "שם חברה מנהלת",
+            "ח.פ חברה מנהלת",
+            "סטטוס זיהוי",
+        ]
+
+        existing_columns = [
+            column
+            for column in preferred_columns
+            if column in fund_df.columns
+        ]
+
+        st.dataframe(
+            fund_df[existing_columns],
+            use_container_width=True,
+            hide_index=True,
+            column_config={
+                "סכום להפקדה": st.column_config.NumberColumn(
+                    "סכום להפקדה",
+                    format="₪ %.2f",
+                )
+            },
+        )
+    else:
+        st.info("לא נמצאו קופות או סכומים להפקדה.")
+
+with tab2:
+    if employee_rows:
+        st.dataframe(
+            pd.DataFrame(employee_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("לא נמצאו עובדים או הפרשות בקובץ.")
+
+with tab3:
+    if contribution_rows:
+        st.dataframe(
+            pd.DataFrame(contribution_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.info("לא נמצאו רשומות הפרשה.")
+
+with tab4:
+    if change_rows:
+        st.dataframe(
+            pd.DataFrame(change_rows),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.success("לא נדרשו תיקונים אוטומטיים.")
+
+with tab5:
+    st.caption(
+        f"לפני התיקון: {len(original_errors)} שגיאות | "
+        f"אחרי התיקון: {len(final_errors)} שגיאות"
+    )
+
+    if final_errors:
+        st.dataframe(
+            pd.DataFrame(final_errors),
+            use_container_width=True,
+            hide_index=True,
+        )
+    else:
+        st.success("אין שגיאות XSD בקובץ הסופי.")
