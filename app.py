@@ -84,11 +84,42 @@ fund_rows = extract_fund_deposits(
     accounts,
 )
 
-c1, c2, c3, c4 = st.columns(4)
-c1.metric("עובדים", len(employee_rows))
-c2.metric("רשומות הפרשה", len(contribution_rows))
+# מספר עובדים לפי תעודות זהות ייחודיות בלבד.
+unique_employee_ids = {
+    str(row.get("ת.ז", "")).strip()
+    for row in employee_rows
+    if str(row.get("ת.ז", "")).strip()
+}
+
+employee_count = len(unique_employee_ids)
+
+# כל ChodeshMaskoretVestatusOved נחשב שורת דיווח אחת,
+# גם אם קיימות בתוכו כמה הפרשות.
+report_rows_count = len(
+    fixed_tree.xpath(
+        "//*[local-name()='ChodeshMaskoretVestatusOved']"
+    )
+)
+employer_name_nodes = fixed_tree.xpath(
+    "//*[local-name()='SHEM-MAASIK']"
+)
+
+employer_name = ""
+
+if employer_name_nodes:
+    employer_name = (
+        employer_name_nodes[0].text or ""
+    ).strip()
+
+if employer_name:
+    st.subheader(f"מעסיק: {employer_name}")
+else:
+    st.subheader("מעסיק: לא זוהה")
+c1, c2, c3 = st.columns(3)
+
+c1.metric("עובדים", employee_count)
+c2.metric("שורות דיווח", report_rows_count)
 c3.metric("תיקונים שבוצעו", len(changes))
-c4.metric("שגיאות XSD שנותרו", len(final_errors))
 
 if not final_errors:
     if changes:
