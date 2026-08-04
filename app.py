@@ -135,8 +135,8 @@ excel_bytes = build_excel(
     contribution_rows,
     change_rows,
     final_errors,
-    fund_rows=fund_rows,
-)base = uploaded.name.rsplit(".", 1)[0]
+    fund_rows=fund_rows,)
+base = uploaded.name.rsplit(".", 1)[0]
 
 b1, b2 = st.columns(2)
 with b1:
