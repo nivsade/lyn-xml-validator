@@ -335,70 +335,70 @@ def validate_and_repair(
                     "הושלם מספר הטלפון הקבוע של לין והוסר xsi:nil אם היה קיים.",
                 )
             )      
-    # השלמת מספר חשבון מעסיק ל-20 ספרות עם אפסים מובילים.
-    for idx, node in enumerate(
-        _find_all(root, "MISPAR-CHESHBON-MAASIK"),
-        start=1,
-    ):
-        before = _text(node)
-
-        account_digits = "".join(
-            ch for ch in before
-            if ch.isdigit()
-        )
-
-        if not account_digits:
-            continue
-
-        if len(account_digits) > 20:
-            changes.append(
-                Change(
-                    "error",
-                    "employer_account_too_long",
-                    f"MISPAR-CHESHBON-MAASIK #{idx}",
-                    before,
-                    "לא שונה",
-                    "מספר החשבון ארוך מ-20 ספרות ולכן לא ניתן לתקן אוטומטית.",
-                )
-            )
-            continue
-
-        required_value = account_digits.zfill(20)
-
-        if before != required_value:
-            node.text = required_value
-
-            changes.append(
-                Change(
-                    "fixed",
-                    "employer_account_padding",
-                    f"MISPAR-CHESHBON-MAASIK #{idx}",
-                    before,
-                    required_value,
-                    "מספר החשבון הושלם ל-20 ספרות באמצעות אפסים מובילים.",
-                )
-            ) 
-    # תיקון מספר סלולרי
-DEFAULT_MOBILE = "0500000000"
-
-for idx, node in enumerate(_find_all(root, "MISPAR-CELLULARI"), start=1):
+# השלמת מספר חשבון מעסיק ל-20 ספרות עם אפסים מובילים.
+for idx, node in enumerate(
+    _find_all(root, "MISPAR-CHESHBON-MAASIK"),
+    start=1,
+):
     before = _text(node)
 
-    mobile = "".join(ch for ch in before if ch.isdigit())
+    account_digits = "".join(
+        ch for ch in before
+        if ch.isdigit()
+    )
 
-    if len(mobile) != 10 or not mobile.startswith("05"):
-        node.text = DEFAULT_MOBILE
+    if not account_digits:
+        continue
+
+    if len(account_digits) > 20:
+        changes.append(
+            Change(
+                "error",
+                "employer_account_too_long",
+                f"MISPAR-CHESHBON-MAASIK #{idx}",
+                before,
+                "לא שונה",
+                "מספר החשבון ארוך מ-20 ספרות ולכן לא ניתן לתקן אוטומטית.",
+            )
+        )
+        continue
+
+    required_value = account_digits.zfill(20)
+
+    if before != required_value:
+        node.text = required_value
 
         changes.append(
             Change(
                 "fixed",
-                "mobile_number",
-                f"MISPAR-CELLULARI #{idx}",
-                before or "ריק",
-                DEFAULT_MOBILE,
-                "מספר הסלולר לא היה תקין ולכן הוחלף ל-0500000000.",
+                "employer_account_padding",
+                f"MISPAR-CHESHBON-MAASIK #{idx}",
+                before,
+                required_value,
+                "מספר החשבון הושלם ל-20 ספרות באמצעות אפסים מובילים.",
             )
+        ) 
+# תיקון מספר סלולרי
+DEFAULT_MOBILE = "0500000000"
+
+for idx, node in enumerate(_find_all(root, "MISPAR-CELLULARI"), start=1):
+before = _text(node)
+
+mobile = "".join(ch for ch in before if ch.isdigit())
+
+if len(mobile) != 10 or not mobile.startswith("05"):
+    node.text = DEFAULT_MOBILE
+
+    changes.append(
+        Change(
+            "fixed",
+            "mobile_number",
+            f"MISPAR-CELLULARI #{idx}",
+            before or "ריק",
+            DEFAULT_MOBILE,
+            "מספר הסלולר לא היה תקין ולכן הוחלף ל-0500000000.",
         )
+    )
 
     return tree, changes
 
