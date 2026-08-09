@@ -4,7 +4,6 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from io import BytesIO
 from pathlib import Path
-from typing import Iterable
 
 from lxml import etree
 
@@ -69,7 +68,10 @@ def _find_first(root, local_name: str):
 
 
 def _find_direct(parent, local_name: str):
-    return next((c for c in parent if _local_name(c) == local_name), None)
+    return next(
+        (child for child in parent if _local_name(child) == local_name),
+        None,
+    )
 
 
 def _text(node) -> str:
@@ -104,6 +106,7 @@ def load_xsd(xsd_path: str | Path) -> etree.XMLSchema:
 
 def validate_xsd(tree, schema: etree.XMLSchema) -> list[dict]:
     is_valid = schema.validate(tree)
+
     if is_valid:
         return []
 
@@ -131,6 +134,7 @@ def validate_and_repair(
 ):
     tree = parse_xml(data)
     root = tree.getroot()
+
     changes: list[Change] = []
 
     # ערכים קבועים של לין והמסלקה.
@@ -166,7 +170,9 @@ def validate_and_repair(
                 )
             )
 
-    # סוג מזהה מעסיק: 1 ח.פ, 5 עוסק מורשה.
+    # סוג מזהה מעסיק:
+    # 1 = ח.פ
+    # 5 = עוסק מורשה
     if employer_id_type in {"1", "5"}:
         for idx, node in enumerate(
             _find_all(root, "SUG-MEZAHE-MAASIK"),
@@ -188,23 +194,31 @@ def validate_and_repair(
                     )
                 )
 
-    # בגרסה 006 השדה נדרש בכל ChodeshMaskoretVestatusOved ולפני פירוט ההפרשות.
-    salary_blocks = _find_all(root, "ChodeshMaskoretVestatusOved")
+    # בגרסה 006 השדה HAFKADA-ACHRONA נדרש
+    # בתוך כל ChodeshMaskoretVestatusOved
+    # ולפני פירוט ההפרשות.
+    salary_blocks = _find_all(
+        root,
+        "ChodeshMaskoretVestatusOved",
+    )
 
-    for idx, block in enumerate(salary_blocks, start=1):
+    for idx, block in enumerate(
+        salary_blocks,
+        start=1,
+    ):
         children = list(block)
 
         deposit_nodes = [
-            c
-            for c in children
-            if _local_name(c) == "HAFKADA-ACHRONA"
+            child
+            for child in children
+            if _local_name(child) == "HAFKADA-ACHRONA"
         ]
 
         first_contribution = next(
             (
-                c
-                for c in children
-                if _local_name(c)
+                child
+                for child in children
+                if _local_name(child)
                 in {
                     "PizulHafrashotOvedBeKupa",
                     "SachHafrashaLeKupaBechodeshMaskoretOved",
@@ -225,6 +239,7 @@ def validate_and_repair(
                         "לא נמצאה נקודת הכנסה בטוחה לפני בלוק ההפרשות.",
                     )
                 )
+
             else:
                 new = etree.Element(
                     first_contribution.tag.replace(
@@ -232,8 +247,13 @@ def validate_and_repair(
                         "HAFKADA-ACHRONA",
                     )
                 )
+
                 new.text = last_deposit_default
-                block.insert(block.index(first_contribution), new)
+
+                block.insert(
+                    block.index(first_contribution),
+                    new,
+                )
 
                 changes.append(
                     Change(
@@ -245,6 +265,7 @@ def validate_and_repair(
                         "נוסף לפני פירוט ההפרשות כנדרש בגרסה 006.",
                     )
                 )
+
         else:
             keep = deposit_nodes[0]
             before = _text(keep)
@@ -281,9 +302,9 @@ def validate_and_repair(
 
             first_contribution = next(
                 (
-                    c
-                    for c in children
-                    if _local_name(c)
+                    child
+                    for child in children
+                    if _local_name(child)
                     in {
                         "PizulHafrashotOvedBeKupa",
                         "SachHafrashaLeKupaBechodeshMaskoretOved",
@@ -294,10 +315,15 @@ def validate_and_repair(
 
             if (
                 first_contribution is not None
-                and block.index(keep) > block.index(first_contribution)
+                and block.index(keep)
+                > block.index(first_contribution)
             ):
                 block.remove(keep)
-                block.insert(block.index(first_contribution), keep)
+
+                block.insert(
+                    block.index(first_contribution),
+                    keep,
+                )
 
                 changes.append(
                     Change(
@@ -310,6 +336,7 @@ def validate_and_repair(
                     )
                 )
 
+    # תיקון שדות בנק שבהם מופיע רק 0.
     if repair_bank_zeroes:
         for tag, replacement in BANK_ZERO_REPLACEMENTS.items():
             for idx, node in enumerate(
@@ -332,20 +359,29 @@ def validate_and_repair(
                         )
                     )
 
-    # מילוי פרטי חשבון הקופה לפי הזיהוי מול accounts.xlsx.
+    # מילוי פרטי חשבון הקופה לפי accounts.xlsx.
     if accounts:
         from account_lookup import find_account
 
-        transfer_blocks = _find_all(root, "PirteiHaavaratKsafim")
+        transfer_blocks = _find_all(
+            root,
+            "PirteiHaavaratKsafim",
+        )
 
-        for idx, block in enumerate(transfer_blocks, start=1):
+        for idx, block in enumerate(
+            transfer_blocks,
+            start=1,
+        ):
             identifier_node = _find_direct(
                 block,
                 "KOD-MEZAHE-KUPA-H-P",
             )
+
             identifier = _text(identifier_node)
 
-            company_id, fund_number = parse_fund_identifier(identifier)
+            company_id, fund_number = parse_fund_identifier(
+                identifier
+            )
 
             if not company_id:
                 changes.append(
@@ -358,6 +394,7 @@ def validate_and_repair(
                         "לא ניתן לזהות את ח.פ החברה המנהלת מתוך קוד הקופה.",
                     )
                 )
+
                 continue
 
             account = find_account(
@@ -377,6 +414,7 @@ def validate_and_repair(
                         "לא נמצאה התאמה מתאימה בקובץ accounts.xlsx.",
                     )
                 )
+
                 continue
 
             bank_code = str(
@@ -388,9 +426,9 @@ def validate_and_repair(
             ).strip()
 
             branch_code_digits = "".join(
-                ch
-                for ch in branch_code_raw
-                if ch.isdigit()
+                char
+                for char in branch_code_raw
+                if char.isdigit()
             )
 
             branch_code = (
@@ -400,11 +438,15 @@ def validate_and_repair(
             )
 
             account_number_digits = "".join(
-                ch
-                for ch in str(
-                    account.get("מספר חשבון", "") or ""
+                char
+                for char in str(
+                    account.get(
+                        "מספר חשבון",
+                        "",
+                    )
+                    or ""
                 )
-                if ch.isdigit()
+                if char.isdigit()
             )
 
             account_number = (
@@ -414,7 +456,11 @@ def validate_and_repair(
             )
 
             fund_name = str(
-                account.get("שם קופה", "") or ""
+                account.get(
+                    "שם קופה",
+                    "",
+                )
+                or ""
             ).strip()
 
             values_to_update = {
@@ -435,9 +481,13 @@ def validate_and_repair(
                             f"לא נמצא ערך עבור {tag} בקובץ accounts.xlsx.",
                         )
                     )
+
                     continue
 
-                node = _find_direct(block, tag)
+                node = _find_direct(
+                    block,
+                    tag,
+                )
 
                 if node is None:
                     changes.append(
@@ -450,6 +500,7 @@ def validate_and_repair(
                             "האלמנט לא קיים בבלוק ולכן לא נוסף כדי לא לשבש את סדר ה-XSD.",
                         )
                     )
+
                     continue
 
                 before = _text(node)
@@ -465,8 +516,10 @@ def validate_and_repair(
                             before,
                             required_value,
                             (
-                                f"עודכן לפי הקופה {fund_name or fund_number}, "
-                                f"ח.פ חברה מנהלת {company_id}."
+                                f"עודכן לפי הקופה "
+                                f"{fund_name or fund_number}, "
+                                f"ח.פ חברה מנהלת "
+                                f"{company_id}."
                             ),
                         )
                     )
@@ -481,7 +534,6 @@ def validate_and_repair(
     ):
         before = _text(node)
 
-        # אם קיים xsi:nil="true", חייבים להסיר אותו לפני הכנסת ערך.
         xsi_nil = (
             "{http://www.w3.org/2001/XMLSchema-instance}nil"
         )
@@ -509,17 +561,20 @@ def validate_and_repair(
                 )
             )
 
-    # השלמת מספר חשבון מעסיק ל-20 ספרות עם אפסים מובילים.
+    # השלמת מספר חשבון מעסיק ל-20 ספרות.
     for idx, node in enumerate(
-        _find_all(root, "MISPAR-CHESHBON-MAASIK"),
+        _find_all(
+            root,
+            "MISPAR-CHESHBON-MAASIK",
+        ),
         start=1,
     ):
         before = _text(node)
 
         account_digits = "".join(
-            ch
-            for ch in before
-            if ch.isdigit()
+            char
+            for char in before
+            if char.isdigit()
         )
 
         if not account_digits:
@@ -539,6 +594,7 @@ def validate_and_repair(
                     ),
                 )
             )
+
             continue
 
         required_value = account_digits.zfill(20)
@@ -560,34 +616,84 @@ def validate_and_repair(
                 )
             )
 
-    # תיקון מספר סלולרי.
+    # ==========================================================
+    # תיקון מספרי סלולר
+    # ==========================================================
+    #
+    # מספר סלולרי תקין:
+    # - בדיוק 10 ספרות
+    # - מתחיל ב-05
+    #
+    # לדוגמה:
+    # 0528785450 = תקין
+    # 0500000000 = תקין
+    # 0482202281 = לא תקין
+    # 048220228  = לא תקין
+    #
+    # השדה החשוב לשגיאה 2322:
+    # MISPAR-CELLULARI-ISH-KESHER-SHOLECH
+    #
+    # הודעת המסלקה:
+    # KoteretKovetz.NetuneiGoremSholech.
+    # MISPARCELLULARIISHKESHERSHOLECH
+    #
     DEFAULT_MOBILE = "0500000000"
 
+    cellular_field_names = {
+        "MISPAR-CELLULARI",
+        "MISPAR-CELLULARI-ISH-KESHER-SHOLECH",
+        "MISPARCELLULARIISHKESHERSHOLECH",
+    }
+
+    cellular_nodes = [
+        node
+        for node in root.iter()
+        if (
+            _local_name(node) in cellular_field_names
+            or "CELLULARI" in _local_name(node).upper()
+        )
+    ]
+
     for idx, node in enumerate(
-        _find_all(root, "MISPAR-CELLULARI"),
+        cellular_nodes,
         start=1,
     ):
         before = _text(node)
+        field_name = _local_name(node)
 
         mobile = "".join(
-            ch
-            for ch in before
-            if ch.isdigit()
+            char
+            for char in before
+            if char.isdigit()
         )
 
-        if len(mobile) != 10 or not mobile.startswith("05"):
+        is_valid_mobile = (
+            len(mobile) == 10
+            and mobile.startswith("05")
+        )
+
+        if not is_valid_mobile:
+            xsi_nil = (
+                "{http://www.w3.org/2001/"
+                "XMLSchema-instance}nil"
+            )
+
+            if xsi_nil in node.attrib:
+                del node.attrib[xsi_nil]
+
             node.text = DEFAULT_MOBILE
 
             changes.append(
                 Change(
                     "fixed",
                     "mobile_number",
-                    f"MISPAR-CELLULARI #{idx}",
+                    f"{field_name} #{idx}",
                     before or "ריק",
                     DEFAULT_MOBILE,
                     (
-                        "מספר הסלולר לא היה תקין "
-                        "ולכן הוחלף ל-0500000000."
+                        "מספר סלולרי חייב להיות בן "
+                        "10 ספרות ולהתחיל ב-05. "
+                        "הערך תוקן ל-0500000000."
                     ),
                 )
             )
@@ -597,29 +703,54 @@ def validate_and_repair(
 
 def extract_contributions(tree) -> list[dict]:
     root = tree.getroot()
+
     rows: list[dict] = []
     row_number = 0
 
-    for person in _find_all(root, "PirteiOved"):
-        first = _text(_find_direct(person, "SHEM-PRATI"))
-        last = _text(_find_direct(person, "SHEM-MISHPACHA"))
-        person_id = _text(_find_direct(person, "MISPAR-MEZAHE"))
+    for person in _find_all(
+        root,
+        "PirteiOved",
+    ):
+        first = _text(
+            _find_direct(
+                person,
+                "SHEM-PRATI",
+            )
+        )
 
-        for salary_block in person.xpath(
+        last = _text(
+            _find_direct(
+                person,
+                "SHEM-MISHPACHA",
+            )
+        )
+
+        person_id = _text(
+            _find_direct(
+                person,
+                "MISPAR-MEZAHE",
+            )
+        )
+
+        salary_blocks = person.xpath(
             "./*[local-name()='ChodeshMaskoretVestatusOved']"
-        ):
+        )
+
+        for salary_block in salary_blocks:
             salary = _text(
                 _find_direct(
                     salary_block,
                     "SACHAR-MEDUVACH",
                 )
             )
+
             month = _text(
                 _find_direct(
                     salary_block,
                     "CHODESH-MASKORET",
                 )
             )
+
             last_dep = _text(
                 _find_direct(
                     salary_block,
@@ -641,36 +772,42 @@ def extract_contributions(tree) -> list[dict]:
                     )
                 )
 
+                contribution_rate = _text(
+                    _find_direct(
+                        contribution,
+                        "SHIUR-HAFRASHA",
+                    )
+                )
+
+                contribution_amount = _text(
+                    _find_direct(
+                        contribution,
+                        "SCHUM-HAFRASHA",
+                    )
+                )
+
                 rows.append(
                     {
                         "מספר רשומה": row_number,
                         "שם עובד": f"{first} {last}".strip(),
                         "ת.ז": person_id,
                         "חודש שכר": month,
-                        "שכר מדווח": float(salary or 0),
+                        "שכר מדווח": float(
+                            salary or 0
+                        ),
                         "הפקדה אחרונה": last_dep,
                         "קוד הפרשה": kind,
-                        "סוג הפרשה": CONTRIBUTION_LABELS.get(
-                            kind,
-                            f"קוד {kind}",
+                        "סוג הפרשה": (
+                            CONTRIBUTION_LABELS.get(
+                                kind,
+                                f"קוד {kind}",
+                            )
                         ),
                         "שיעור הפרשה": float(
-                            _text(
-                                _find_direct(
-                                    contribution,
-                                    "SHIUR-HAFRASHA",
-                                )
-                            )
-                            or 0
+                            contribution_rate or 0
                         ),
                         "סכום הפרשה": float(
-                            _text(
-                                _find_direct(
-                                    contribution,
-                                    "SCHUM-HAFRASHA",
-                                )
-                            )
-                            or 0
+                            contribution_amount or 0
                         ),
                     }
                 )
@@ -707,8 +844,13 @@ def build_employee_summary(
                 "סה״כ הפרשות": 0.0,
             }
 
-        amount = float(row["סכום הפרשה"] or 0)
-        kind = str(row["קוד הפרשה"])
+        amount = float(
+            row["סכום הפרשה"] or 0
+        )
+
+        kind = str(
+            row["קוד הפרשה"]
+        )
 
         target = {
             "1": "פיצויים",
@@ -723,14 +865,16 @@ def build_employee_summary(
         grouped[key][target] += amount
         grouped[key]["סה״כ הפרשות"] += amount
 
-    return list(grouped.values())
+    return list(
+        grouped.values()
+    )
 
 
 def _digits(value: str) -> str:
     return "".join(
-        ch
-        for ch in str(value or "")
-        if ch.isdigit()
+        char
+        for char in str(value or "")
+        if char.isdigit()
     )
 
 
@@ -741,23 +885,33 @@ def parse_fund_identifier(
     KOD-MEZAHE-KUPA-H-P בנוי מ-30 ספרות.
 
     9 הספרות הראשונות הן ח.פ החברה המנהלת.
-    מספר הקופה מופיע בחלק שאחרי הח.פ כשהוא מוקף באפסים.
+
+    מספר הקופה מופיע בחלק שאחרי הח.פ
+    כשהוא מוקף באפסים.
 
     לדוגמה:
+
     513026484000000000002090000000
+
     יהפוך ל:
+
     ח.פ 513026484
     מספר קופה 209
     """
-    digits = _digits(identifier)
+
+    digits = _digits(
+        identifier
+    )
 
     if len(digits) < 9:
         return "", ""
 
     company_id = digits[:9]
+
     remaining = digits[9:]
 
-    # לפי מבנה הקוד, שבע הספרות האחרונות הן מילוי.
+    # לפי מבנה הקוד,
+    # שבע הספרות האחרונות הן מילוי.
     if len(remaining) > 7:
         fund_part = remaining[:-7]
     else:
@@ -773,10 +927,16 @@ def extract_fund_deposits(
     accounts: dict[str, list[dict]],
 ) -> list[dict]:
     """
-    מפיק טבלה מרוכזת של הקופות והסכום להפקדה בכל קופה.
+    מפיק טבלה מרוכזת של הקופות
+    והסכום להפקדה בכל קופה.
     """
+
     root = tree.getroot()
-    grouped: dict[tuple[str, str], dict] = {}
+
+    grouped: dict[
+        tuple[str, str],
+        dict,
+    ] = {}
 
     transfer_blocks = _find_all(
         root,
@@ -791,13 +951,17 @@ def extract_fund_deposits(
             transfer_block,
             "KOD-MEZAHE-KUPA-H-P",
         )
-        identifier = _text(identifier_node)
+
+        identifier = _text(
+            identifier_node
+        )
 
         company_id, fund_number = parse_fund_identifier(
             identifier
         )
 
-        # חישוב הסכום בפועל מתוך כל רשומות ההפרשה בקופה.
+        # חישוב הסכום בפועל מתוך
+        # כל רשומות ההפרשה בקופה.
         contribution_nodes = transfer_block.xpath(
             ".//*[local-name()='SCHUM-HAFRASHA']"
         )
@@ -805,20 +969,26 @@ def extract_fund_deposits(
         total_amount = Decimal("0")
 
         for contribution_node in contribution_nodes:
-            value = _text(contribution_node)
+            value = _text(
+                contribution_node
+            )
 
             if not value:
                 continue
 
             try:
-                total_amount += Decimal(value)
+                total_amount += Decimal(
+                    value
+                )
+
             except InvalidOperation:
                 continue
 
         account = None
 
         if company_id:
-            # הייבוא נמצא כאן כדי למנוע תלות מעגלית בין הקבצים.
+            # הייבוא נמצא כאן כדי למנוע
+            # תלות מעגלית בין הקבצים.
             from account_lookup import find_account
 
             account = find_account(
@@ -828,27 +998,52 @@ def extract_fund_deposits(
             )
 
         if account:
-            fund_name = account.get("שם קופה", "")
-            company_name = account.get("שם חברה", "")
+            fund_name = account.get(
+                "שם קופה",
+                "",
+            )
+
+            company_name = account.get(
+                "שם חברה",
+                "",
+            )
+
             matched_fund_number = account.get(
                 "מספר קופה",
                 fund_number,
             )
-            bank_code = account.get("קוד בנק", "")
-            branch_code = account.get("קוד סניף", "")
+
+            bank_code = account.get(
+                "קוד בנק",
+                "",
+            )
+
+            branch_code = account.get(
+                "קוד סניף",
+                "",
+            )
 
             account_number_raw = str(
-                account.get("מספר חשבון", "") or ""
+                account.get(
+                    "מספר חשבון",
+                    "",
+                )
+                or ""
             ).strip()
 
             account_number = "".join(
-                ch
-                for ch in account_number_raw
-                if ch.isdigit()
+                char
+                for char in account_number_raw
+                if char.isdigit()
             ).zfill(20)
 
-            bank_account = account.get("פרטי חשבון", "")
+            bank_account = account.get(
+                "פרטי חשבון",
+                "",
+            )
+
             match_status = "זוהה"
+
         else:
             fund_name_node = transfer_block.xpath(
                 ".//*[local-name()='SHEM-KUPA-ETZEL-MAASIK']"
@@ -878,7 +1073,10 @@ def extract_fund_deposits(
                 "שם חברה מנהלת": company_name,
                 "שם קופה": fund_name,
                 "ח.פ חברה מנהלת": company_id,
-                "מספר קופה": matched_fund_number or fund_number,
+                "מספר קופה": (
+                    matched_fund_number
+                    or fund_number
+                ),
                 "סכום להפקדה": 0.0,
                 "קוד בנק": bank_code,
                 "קוד סניף": branch_code,
@@ -888,15 +1086,21 @@ def extract_fund_deposits(
                 "קוד קופה מהקובץ": identifier,
             }
 
-        grouped[key]["סכום להפקדה"] += float(
+        grouped[key][
+            "סכום להפקדה"
+        ] += float(
             total_amount
         )
 
-    rows = list(grouped.values())
+    rows = list(
+        grouped.values()
+    )
 
     for row in rows:
         row["סכום להפקדה"] = round(
-            float(row["סכום להפקדה"]),
+            float(
+                row["סכום להפקדה"]
+            ),
             2,
         )
 
