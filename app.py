@@ -5,6 +5,37 @@ from account_lookup import load_accounts
 
 import pandas as pd
 import streamlit as st
+from io import BytesIO
+from openpyxl import load_workbook
+
+def extract_single_sheet_excel(
+    excel_bytes: bytes,
+    sheet_name: str,
+) -> bytes:
+    """
+    יוצר קובץ Excel חדש שמכיל רק גיליון אחד
+    מתוך קובץ Excel קיים.
+    """
+
+    source = BytesIO(excel_bytes)
+
+    workbook = load_workbook(source)
+
+    if sheet_name not in workbook.sheetnames:
+        raise ValueError(
+            f"הגיליון '{sheet_name}' לא נמצא בקובץ. "
+            f"גיליונות קיימים: {workbook.sheetnames}"
+        )
+
+    # מוחקים את כל הגיליונות חוץ מהגיליון המבוקש.
+    for current_sheet in workbook.sheetnames.copy():
+        if current_sheet != sheet_name:
+            del workbook[current_sheet]
+
+    output = BytesIO()
+    workbook.save(output)
+
+    return output.getvalue()
 
 from excel_service import build_excel
 from xml_service import (
@@ -136,9 +167,13 @@ excel_bytes = build_excel(
     change_rows,
     final_errors,
     fund_rows=fund_rows,)
+summary_excel_bytes = extract_single_sheet_excel(
+    excel_bytes,
+    "סיכום פקודות והפקדות",
+)
 base = uploaded.name.rsplit(".", 1)[0]
 
-b1, b2 = st.columns(2)
+b1, b2, b3 = st.columns(3)
 with b1:
     st.download_button(
         "הורדת XML/DAT מתוקן",
@@ -156,7 +191,14 @@ with b2:
         mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         use_container_width=True,
     )
-
+with b3:
+    st.download_button(
+        "📊 סיכום פקודות והפקדות",
+        data=summary_excel_bytes,
+        file_name=f"{base}_פקודות_והפקדות.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        use_container_width=True,
+    )
 tab1, tab2, tab3, tab4, tab5 = st.tabs(
     [
         "סיכום קופות והפקדות",
