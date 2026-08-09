@@ -377,7 +377,28 @@ def validate_and_repair(
                     required_value,
                     "מספר החשבון הושלם ל-20 ספרות באמצעות אפסים מובילים.",
                 )
-            )              
+            ) 
+    # תיקון מספר סלולרי
+DEFAULT_MOBILE = "0500000000"
+
+for idx, node in enumerate(_find_all(root, "MISPAR-CELLULARI"), start=1):
+    before = _text(node)
+
+    mobile = "".join(ch for ch in before if ch.isdigit())
+
+    if len(mobile) != 10 or not mobile.startswith("05"):
+        node.text = DEFAULT_MOBILE
+
+        changes.append(
+            Change(
+                "fixed",
+                "mobile_number",
+                f"MISPAR-CELLULARI #{idx}",
+                before or "ריק",
+                DEFAULT_MOBILE,
+                "מספר הסלולר לא היה תקין ולכן הוחלף ל-0500000000.",
+            )
+        )
 
     return tree, changes
 
