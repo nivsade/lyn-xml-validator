@@ -501,12 +501,44 @@ with b2:
 with b3:
 
     if summary_excel_bytes is not None:
+        
+                # שם מעסיק
+        employer_nodes = fixed_tree.xpath(
+            "//*[local-name()='SHEM-MAASIK']"
+        )
+        
+        employer_name = (
+            (employer_nodes[0].text or "").strip()
+            if employer_nodes
+            else "מעסיק"
+        )
+        
+        # חודש דיווח
+        month_nodes = fixed_tree.xpath(
+            "//*[local-name()='CHODESH-MASKORET']"
+        )
+        
+        report_month = ""
+        
+        if month_nodes:
+            month_text = (month_nodes[0].text or "").strip()
+        
+            # לדוגמה: 2026-07-01 -> 072026
+            if len(month_text) >= 7:
+                year = month_text[0:4]
+                month = month_text[5:7]
+                report_month = f"{month}{year}"
+        
+        # ניקוי תווים שאסור שיהיו בשם קובץ ב-Windows
+        for char in ['\\', '/', ':', '*', '?', '"', '<', '>', '|']:
+            employer_name = employer_name.replace(char, "")
+        
+        summary_filename = f"{employer_name} {report_month}.xlsx"
 
         st.download_button(
             "📊 סיכום קופות והפקדות",
             data=summary_excel_bytes,
-            file_name=(
-                f"{base}_סיכום_קופות_והפקדות.xlsx"
+            file_name=summary_filename,
             ),
             mime=(
                 "application/vnd.openxmlformats-officedocument."
