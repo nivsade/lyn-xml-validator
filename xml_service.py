@@ -698,6 +698,221 @@ def validate_and_repair(
                 )
             )
 
+
+
+
+        # =========================================================
+    # פרטי קשר קבועים / תיקון פרטי קשר בכל הקובץ
+    # =========================================================
+
+    DEFAULT_EMAIL = "niv@ssade.co.il"
+    DEFAULT_MOBILE = "0500000000"
+    DEFAULT_LANDLINE = "048220228"
+    DEFAULT_CITY = "חיפה"
+
+    XSI_NIL = "{http://www.w3.org/2001/XMLSchema-instance}nil"
+
+    # ---------------------------------------------------------
+    # 1. כל כתובות המייל בקובץ מוחלפות למייל הקבוע של לין
+    # מטפל בכל תג שמכיל E-MAIL:
+    # עובד, מעסיק, שולח, פונה למסלקה וכו'
+    # ---------------------------------------------------------
+    email_nodes = root.xpath(
+        ".//*[contains(local-name(), 'E-MAIL')]"
+    )
+
+    for idx, node in enumerate(email_nodes, start=1):
+        before = _text(node)
+
+        # אם האלמנט מסומן כריק, חייבים להסיר xsi:nil לפני הכנסת ערך
+        if node.get(XSI_NIL) == "true":
+            del node.attrib[XSI_NIL]
+
+        if before != DEFAULT_EMAIL:
+            node.text = DEFAULT_EMAIL
+
+            changes.append(
+                Change(
+                    "fixed",
+                    "email_standardization",
+                    f"{_local_name(node)} #{idx}",
+                    before or "ריק",
+                    DEFAULT_EMAIL,
+                    "כתובת המייל הוחלפה למייל הקבוע של לין.",
+                )
+            )
+
+    # ---------------------------------------------------------
+    # 2. תיקון כל מספרי הסלולר בקובץ
+    # תקין רק אם:
+    # - 10 ספרות
+    # - מתחיל ב-05
+    # אחרת: 0500000000
+    # ---------------------------------------------------------
+    mobile_nodes = root.xpath(
+        ".//*[contains(local-name(), 'CELLULARI')]"
+    )
+
+    for idx, node in enumerate(mobile_nodes, start=1):
+        before = _text(node)
+
+        mobile = "".join(
+            ch for ch in before
+            if ch.isdigit()
+        )
+
+        if node.get(XSI_NIL) == "true":
+            del node.attrib[XSI_NIL]
+
+        mobile_is_valid = (
+            len(mobile) == 10
+            and mobile.startswith("05")
+        )
+
+        if not mobile_is_valid:
+            node.text = DEFAULT_MOBILE
+
+            changes.append(
+                Change(
+                    "fixed",
+                    "mobile_number",
+                    f"{_local_name(node)} #{idx}",
+                    before or "ריק",
+                    DEFAULT_MOBILE,
+                    "מספר סלולרי חייב להכיל 10 ספרות ולהתחיל ב-05.",
+                )
+            )
+
+    # ---------------------------------------------------------
+    # 3. תיקון כל הטלפונים הקוויים בקובץ
+    # תקין רק אם:
+    # - 9 ספרות
+    # - מתחיל ב-04 / 03 / 09
+    # אחרת: 048220228
+    # ---------------------------------------------------------
+    landline_nodes = root.xpath(
+        ".//*[contains(local-name(), 'TELEPHONE-KAVI')]"
+    )
+
+    for idx, node in enumerate(landline_nodes, start=1):
+        before = _text(node)
+
+        phone = "".join(
+            ch for ch in before
+            if ch.isdigit()
+        )
+
+        if node.get(XSI_NIL) == "true":
+            del node.attrib[XSI_NIL]
+
+        landline_is_valid = (
+            len(phone) == 9
+            and phone.startswith(("04", "03", "09"))
+        )
+
+        if not landline_is_valid:
+            node.text = DEFAULT_LANDLINE
+
+            changes.append(
+                Change(
+                    "fixed",
+                    "landline_number",
+                    f"{_local_name(node)} #{idx}",
+                    before or "ריק",
+                    DEFAULT_LANDLINE,
+                    "טלפון קווי חייב להכיל 9 ספרות ולהתחיל ב-04, 03 או 09.",
+                )
+            )
+
+    # ---------------------------------------------------------
+    # 4. השלמת פרטי עובדים
+    # עיר ריקה -> חיפה
+    # מייל -> niv@ssade.co.il
+    # סלולרי לא תקין/ריק -> 0500000000
+    # ---------------------------------------------------------
+    for employee_idx, employee in enumerate(
+        _find_all(root, "PirteiOved"),
+        start=1,
+    ):
+        # עיר
+        city_node = _find_direct(employee, "SHEM-YISHUV")
+
+        if city_node is not None:
+            before = _text(city_node)
+
+            if city_node.get(XSI_NIL) == "true":
+                del city_node.attrib[XSI_NIL]
+
+            if not before:
+                city_node.text = DEFAULT_CITY
+
+                changes.append(
+                    Change(
+                        "fixed",
+                        "employee_city",
+                        f"עובד #{employee_idx} - SHEM-YISHUV",
+                        "ריק",
+                        DEFAULT_CITY,
+                        "עיר העובד הייתה ריקה ולכן הושלמה לחיפה.",
+                    )
+                )
+
+        # מייל עובד
+        employee_email = _find_direct(employee, "E-MAIL")
+
+        if employee_email is not None:
+            before = _text(employee_email)
+
+            if employee_email.get(XSI_NIL) == "true":
+                del employee_email.attrib[XSI_NIL]
+
+            if before != DEFAULT_EMAIL:
+                employee_email.text = DEFAULT_EMAIL
+
+                changes.append(
+                    Change(
+                        "fixed",
+                        "employee_email",
+                        f"עובד #{employee_idx} - E-MAIL",
+                        before or "ריק",
+                        DEFAULT_EMAIL,
+                        "מייל העובד הוחלף למייל הקבוע.",
+                    )
+                )
+
+        # סלולרי עובד
+        employee_mobile = _find_direct(
+            employee,
+            "MISPAR-CELLULARI",
+        )
+
+        if employee_mobile is not None:
+            before = _text(employee_mobile)
+
+            mobile = "".join(
+                ch for ch in before
+                if ch.isdigit()
+            )
+
+            if employee_mobile.get(XSI_NIL) == "true":
+                del employee_mobile.attrib[XSI_NIL]
+
+            if len(mobile) != 10 or not mobile.startswith("05"):
+                employee_mobile.text = DEFAULT_MOBILE
+
+                changes.append(
+                    Change(
+                        "fixed",
+                        "employee_mobile",
+                        f"עובד #{employee_idx} - MISPAR-CELLULARI",
+                        before or "ריק",
+                        DEFAULT_MOBILE,
+                        "מספר הסלולר של העובד לא היה תקין.",
+                    )
+                )
+
+    return tree, changes
+
     return tree, changes
 
 
