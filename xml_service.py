@@ -914,10 +914,10 @@ def validate_and_repair(
                     )
                 )
     # תיקון MISPAR-HAKOVETZ לאורך מקסימלי של 34 תווים
-file_number_nodes = _find_all(root, "MISPAR-HAKOVETZ")
-
-for idx, node in enumerate(file_number_nodes, start=1):
-    before = _text(node)
+    file_number_nodes = _find_all(root, "MISPAR-HAKOVETZ")
+    
+    for idx, node in enumerate(file_number_nodes, start=1):
+        before = _text(node)
 
     if len(before) > 34:
         # 14 תווים ראשונים = תאריך ושעה
