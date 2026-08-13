@@ -913,8 +913,42 @@ def validate_and_repair(
                         "מספר הסלולר של העובד לא היה תקין.",
                     )
                 )
+    # תיקון MISPAR-HAKOVETZ לאורך מקסימלי של 34 תווים
+file_number_nodes = _find_all(root, "MISPAR-HAKOVETZ")
 
-    return tree, changes
+for idx, node in enumerate(file_number_nodes, start=1):
+    before = _text(node)
+
+    if len(before) > 34:
+        # 14 תווים ראשונים = תאריך ושעה
+        timestamp = before[:14]
+
+        # 4 תווים אחרונים = מספר סידורי
+        serial = before[-4:]
+
+        # מזהה לין הקבוע
+        sender_id = "058893207"
+
+        # המבנה הסופי באורך 34 תווים
+        required_value = (
+            f"{timestamp}"
+            f"0000000"
+            f"{sender_id}"
+            f"{serial}"
+        )
+
+        node.text = required_value
+
+        changes.append(
+            Change(
+                "fixed",
+                "mispar_hakovetz_length",
+                f"MISPAR-HAKOVETZ #{idx}",
+                before,
+                required_value,
+                "מספר הקובץ היה ארוך מ-34 תווים ולכן נבנה מחדש לפי פורמט גרסה 006.",
+            )
+        )
 
     return tree, changes
 
