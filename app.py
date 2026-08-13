@@ -19,6 +19,77 @@ from xml_service import (
     validate_xsd,
 )
 
+import re
+
+
+def is_valid_dat_filename(filename: str) -> bool:
+    """
+    בודק אם שם הקובץ כבר בפורמט התקין של ממשק המעסיקים.
+    דוגמה:
+    006000058893207EMPONG000006202608130927000001.DAT
+    """
+
+    pattern = (
+        r"^006000"
+        r"\d{9}"
+        r"EMPONG"
+        r"000006"
+        r"\d{14}"
+        r"\d{4}"
+        r"\.DAT$"
+    )
+
+    return re.fullmatch(pattern, filename.upper()) is not None
+
+
+def build_correct_dat_filename(tree) -> str:
+    """
+    יוצר שם קובץ DAT תקין לפי הנתונים שבתוך ה-XML.
+    """
+
+    root = tree.getroot()
+
+    def get_text(tag: str) -> str:
+        nodes = root.xpath(
+            f".//*[local-name()='{tag}']"
+        )
+
+        if not nodes:
+            return ""
+
+        return (nodes[0].text or "").strip()
+
+    sender_id = "".join(
+        ch
+        for ch in get_text("MISPAR-ZIHUI-SHOLECH")
+        if ch.isdigit()
+    )
+
+    version = get_text("MISPAR-GIRSAT-XML") or "006"
+    file_number = get_text("MISPAR-HAKOVETZ")
+
+    if not sender_id:
+        sender_id = "058893207"
+
+    sender_id = sender_id.zfill(9)
+
+    if len(file_number) < 14:
+        raise ValueError(
+            "לא ניתן ליצור שם קובץ תקין: MISPAR-HAKOVETZ אינו תקין."
+        )
+
+    timestamp = file_number[:14]
+    serial = file_number[-4:] if len(file_number) >= 4 else "0001"
+
+    return (
+        f"006000"
+        f"{sender_id}"
+        f"EMPONG"
+        f"000{version}"
+        f"{timestamp}"
+        f"{serial}"
+        f".DAT"
+    )
 
 # ============================================================
 # פונקציה ליצירת Excel עם גיליון אחד בלבד
@@ -471,11 +542,17 @@ b1, b2, b3 = st.columns(3)
 
 
 with b1:
+    if is_valid_dat_filename(uploaded.name):
+    correct_dat_filename = uploaded.name
+else:
+    correct_dat_filename = build_correct_dat_filename(
+        fixed_tree
+    )
 
     st.download_button(
         "הורדת XML/DAT מתוקן",
         data=fixed_xml,
-        file_name=uploaded.name,
+        file_name=correct_dat_filename,
         mime="application/xml",
         use_container_width=True,
         type="primary",
