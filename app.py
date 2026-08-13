@@ -539,15 +539,15 @@ base = uploaded.name.rsplit(
 # ============================================================
 
 b1, b2, b3 = st.columns(3)
-
-
-with b1:
-    if is_valid_dat_filename(uploaded.name):
+  if is_valid_dat_filename(uploaded.name):
     correct_dat_filename = uploaded.name
 else:
     correct_dat_filename = build_correct_dat_filename(
         fixed_tree
     )
+
+with b1:
+
 
     st.download_button(
         "הורדת XML/DAT מתוקן",
