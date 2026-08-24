@@ -237,7 +237,6 @@ with st.sidebar:
 
   
 
-    last_deposit = last_deposit_option.split(" ")[0]
 
     repair_banks = st.checkbox(
         "לתקן שדות בנק שערכם 0",
