@@ -235,13 +235,7 @@ with st.sidebar:
         "עוסק מורשה – קוד 5": "5",
     }.get(employer_option)
 
-    last_deposit_option = st.selectbox(
-        "הפקדה אחרונה כשחסר השדה",
-        [
-            "2 – כן",
-            "1 – לא",
-        ],
-    )
+  
 
     last_deposit = last_deposit_option.split(" ")[0]
 
@@ -331,7 +325,6 @@ try:
     fixed_tree, changes = validate_and_repair(
         uploaded.getvalue(),
         employer_id_type=employer_type,
-        last_deposit_default=last_deposit,
         repair_bank_zeroes=repair_banks,
         accounts=accounts,
     )
