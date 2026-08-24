@@ -200,6 +200,12 @@ def validate_and_repair(
     # בגרסה 006 השדה HAFKADA-ACHRONA נדרש
     # בתוך כל ChodeshMaskoretVestatusOved
     # ולפני פירוט ההפרשות.
+        # =========================================================
+    # HAFKADA-ACHRONA
+    # אם השדה כבר קיים - לא משנים את הערך.
+    # אם השדה חסר - מוסיפים 1 (לא).
+    # =========================================================
+
     salary_blocks = _find_all(
         root,
         "ChodeshMaskoretVestatusOved",
@@ -221,8 +227,7 @@ def validate_and_repair(
             (
                 child
                 for child in children
-                if _local_name(child)
-                in {
+                if _local_name(child) in {
                     "PizulHafrashotOvedBeKupa",
                     "SachHafrashaLeKupaBechodeshMaskoretOved",
                 }
@@ -230,7 +235,9 @@ def validate_and_repair(
             None,
         )
 
+        # השדה לא קיים בכלל -> מוסיפים 1 = לא
         if not deposit_nodes:
+
             if first_contribution is None:
                 changes.append(
                     Change(
@@ -239,7 +246,7 @@ def validate_and_repair(
                         f"רשומת שכר #{idx}",
                         "חסר",
                         "לא נוסף",
-                        "לא נמצאה נקודת הכנסה בטוחה לפני בלוק ההפרשות.",
+                        "HAFKADA-ACHRONA חסר ולא נמצאה נקודת הכנסה בטוחה.",
                     )
                 )
 
@@ -251,7 +258,8 @@ def validate_and_repair(
                     )
                 )
 
-                new.text = last_deposit_default
+                # 1 = לא
+                new.text = "1"
 
                 block.insert(
                     block.index(first_contribution),
@@ -264,29 +272,16 @@ def validate_and_repair(
                         "last_deposit_added",
                         f"רשומת שכר #{idx}",
                         "חסר",
-                        last_deposit_default,
-                        "נוסף לפני פירוט ההפרשות כנדרש בגרסה 006.",
+                        "1",
+                        "השדה היה חסר ולכן נוסף HAFKADA-ACHRONA=1 (לא).",
                     )
                 )
 
+        # השדה כבר קיים -> לא משנים את הערך
         else:
             keep = deposit_nodes[0]
-            before = _text(keep)
 
-            if before not in {"1", "2"}:
-                keep.text = last_deposit_default
-
-                changes.append(
-                    Change(
-                        "fixed",
-                        "last_deposit_value",
-                        f"רשומת שכר #{idx}",
-                        before,
-                        last_deposit_default,
-                        "קוד חוקי: 1=לא, 2=כן.",
-                    )
-                )
-
+            # אם בטעות קיימים כמה מופעים - משאירים רק אחד
             for duplicate in deposit_nodes[1:]:
                 block.remove(duplicate)
 
@@ -297,18 +292,18 @@ def validate_and_repair(
                         f"רשומת שכר #{idx}",
                         _text(duplicate),
                         "הוסר",
-                        "נשמר מופע יחיד בלבד.",
+                        "נשמר מופע יחיד של HAFKADA-ACHRONA.",
                     )
                 )
 
+            # מוודאים שהשדה נמצא לפני פירוט ההפרשות
             children = list(block)
 
             first_contribution = next(
                 (
                     child
                     for child in children
-                    if _local_name(child)
-                    in {
+                    if _local_name(child) in {
                         "PizulHafrashotOvedBeKupa",
                         "SachHafrashaLeKupaBechodeshMaskoretOved",
                     }
@@ -318,8 +313,7 @@ def validate_and_repair(
 
             if (
                 first_contribution is not None
-                and block.index(keep)
-                > block.index(first_contribution)
+                and block.index(keep) > block.index(first_contribution)
             ):
                 block.remove(keep)
 
@@ -335,7 +329,7 @@ def validate_and_repair(
                         f"רשומת שכר #{idx}",
                         "אחרי ההפרשות",
                         "לפני ההפרשות",
-                        "תוקן סדר האלמנטים.",
+                        "תוקן מיקום HAFKADA-ACHRONA ללא שינוי בערך.",
                     )
                 )
 
