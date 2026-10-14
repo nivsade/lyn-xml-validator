@@ -197,16 +197,30 @@ def validate_and_repair(
                     )
                 )
     
+   
     # תיקון אוטומטי של ערכי 0 בפרטי התשלום
     for field_name in (
         "SUG-CHESHBON-KOLET-TASHLUM",
         "KOD-EMTZAI-TASHLUM",
     ):
-        for element in root.iter():
+        for idx, element in enumerate(root.iter(), start=1):
             tag_name = element.tag.split("}")[-1]
-    
+
             if tag_name == field_name and (element.text or "").strip() == "0":
+                before = element.text
                 element.text = "1"
+
+                changes.append(
+                    Change(
+                        "fixed",
+                        "payment_field",
+                        f"{field_name} #{idx}",
+                        before,
+                        "1",
+                        "ערך 0 תוקן אוטומטית ל-1.",
+                    )
+                )
+
 
 
     # בגרסה 006 השדה HAFKADA-ACHRONA נדרש
