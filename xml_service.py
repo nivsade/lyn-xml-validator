@@ -196,6 +196,18 @@ def validate_and_repair(
                         "עודכן בהתאם לסוג המעסיק שנבחר.",
                     )
                 )
+    
+    # תיקון אוטומטי של ערכי 0 בפרטי התשלום
+    for field_name in (
+        "SUG-CHESHBON-KOLET-TASHLUM",
+        "KOD-EMTZAI-TASHLUM",
+    ):
+        for element in root.iter():
+            tag_name = element.tag.split("}")[-1]
+    
+            if tag_name == field_name and (element.text or "").strip() == "0":
+                element.text = "1"
+
 
     # בגרסה 006 השדה HAFKADA-ACHRONA נדרש
     # בתוך כל ChodeshMaskoretVestatusOved
