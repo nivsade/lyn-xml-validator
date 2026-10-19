@@ -222,6 +222,56 @@ def validate_and_repair(
                 )
 
 
+    # תיקון סטטוס עובד 0 כאשר השכר המדווח הוא 0
+    from decimal import Decimal, InvalidOperation
+
+    for record in root.iter():
+        if record.tag.split("}")[-1] != "ChodeshMaskoretVestatusOved":
+            continue
+
+        status_el = next(
+            (
+                el for el in record
+                if el.tag.split("}")[-1]
+                == "STATUS-OVED-BECHODESH-MASKORET"
+            ),
+            None,
+        )
+
+        salary_el = next(
+            (
+                el for el in record
+                if el.tag.split("}")[-1] == "SCHUM-MASKORET"
+            ),
+            None,
+        )
+
+        if status_el is None or salary_el is None:
+            continue
+
+        if (status_el.text or "").strip() != "0":
+            continue
+
+        try:
+            salary = Decimal((salary_el.text or "").strip())
+        except InvalidOperation:
+            continue
+
+        if salary == 0:
+            status_el.text = "8"
+
+            changes.append(
+                Change(
+                    "fixed",
+                    "employee_status",
+                    "STATUS-OVED-BECHODESH-MASKORET",
+                    "0",
+                    "8",
+                    "סטטוס עובד עודכן להיעדר שכר "
+                    "לאחר זיהוי שכר מדווח 0.",
+                )
+            )
+
 
     # בגרסה 006 השדה HAFKADA-ACHRONA נדרש
     # בתוך כל ChodeshMaskoretVestatusOved
