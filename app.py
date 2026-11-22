@@ -205,6 +205,76 @@ st.markdown(
 # כותרת
 # ============================================================
 
+mode = st.sidebar.radio('פעולה', ['תיקון קבצים', 'יצירת ממשק שלילי'], key='lyn_mode')
+
+if mode == 'יצירת ממשק שלילי':
+    from decimal import Decimal, ROUND_HALF_UP
+    from negative_service import employer_info, create_negative
+    st.title('יצירת ממשק מעסיקים שלילי')
+    st.info('קובץ השכר משמש לשליפת נתונים בלבד. יש לאמת את פרטי ההפקדה המקורית לפני שידור בקשת החזר.')
+    blank = BASE_DIR / 'employer_declaration_blank.pdf'
+    if blank.exists():
+        st.download_button('הורדת נספח ב׳ – תצהיר מעסיק ריק', blank.read_bytes(), file_name='תצהיר מעסיק - נספח ב.pdf', mime='application/pdf')
+    source = st.file_uploader('העלאת קובץ שכר של אותו מעסיק (XML / DAT)', type=['xml','dat'], key='negative_source')
+    if source is not None:
+        try:
+            info = employer_info(source.getvalue())
+            st.success(f"מעסיק: {info['name']} | מזהה: {info['id']} | תיק ניכויים: {info['withholding']}")
+            if not info['employees']:
+                st.error('לא נמצאו עובדים בקובץ')
+                st.stop()
+            with st.form('negative_form'):
+                employee = st.selectbox('עובד', list(info['employees']), format_func=lambda x: info['employees'][x])
+                fund_options = list(info['funds'])
+                fund = st.selectbox('קופה מהקובץ', fund_options, format_func=lambda x: f'{info["funds"][x]} — {x}')
+                fund_override = st.text_input('קוד מזהה קופה אחר (30 ספרות, רק אם הקופה אינה בקובץ)', '')
+                month = st.text_input('חודש שכר להחזר (MMYYYY)', value='082026')
+                reason = st.selectbox('סיבת הבקשה', ['הפקדה ביתר', 'הפקדה כפולה', 'סיבה אחרת'])
+                reason_code = st.text_input('קוד סיבת החזר לפי המפרט', value='2', help='יש לוודא את קוד הסיבה לפני שידור')
+                total = st.number_input('סכום החזר בש״ח', min_value=0.01, value=1500.0, step=100.0)
+                c1,c2,c3=st.columns(3)
+                with c1: er=st.number_input('תגמולי עובד %', min_value=0.0, value=6.0)
+                with c2: mr=st.number_input('תגמולי מעסיק %', min_value=0.0, value=6.5)
+                with c3: pr=st.number_input('פיצויים %', min_value=0.0, value=6.0)
+                manual=st.checkbox('הזנת סכומים ידנית לכל רכיב')
+                if manual:
+                    a=st.number_input('תגמולי עובד ₪',min_value=0.0,value=486.49)
+                    b=st.number_input('תגמולי מעסיק ₪',min_value=0.0,value=527.02)
+                    c=st.number_input('פיצויים ₪',min_value=0.0,value=486.49)
+                else:
+                    rate=Decimal(str(er+mr+pr))
+                    if rate:
+                        a=float((Decimal(str(total))*Decimal(str(er))/rate).quantize(Decimal('.01'),rounding=ROUND_HALF_UP))
+                        b=float((Decimal(str(total))*Decimal(str(mr))/rate).quantize(Decimal('.01'),rounding=ROUND_HALF_UP))
+                        c=round(total-a-b,2)
+                    else: a=b=c=0
+                    st.caption(f'חלוקה: עובד {a:.2f} ₪ | מעסיק {b:.2f} ₪ | פיצויים {c:.2f} ₪')
+                bc1,bc2,bc3=st.columns(3)
+                with bc1: bank=st.text_input('בנק',value='')
+                with bc2: branch=st.text_input('סניף',value='')
+                with bc3: account=st.text_input('חשבון להחזר',value='')
+                declaration=st.file_uploader('תצהיר מעסיק חתום ומאומת (PDF)',type=['pdf'])
+                approval=st.file_uploader('אישור עובד חתום, אם נדרש (PDF)',type=['pdf'])
+                confirm=st.checkbox('בדקתי את ההפקדה המקורית, פרטי הבנק וסכומי הרכיבים')
+                submitted=st.form_submit_button('הכנת ממשק שלילי לבדיקה')
+            if submitted:
+                if not confirm: st.error('נדרש לאשר את אימות נתוני ההפקדה והבנק')
+                elif abs((a+b+c)-total)>0.01: st.error('סכומי הרכיבים אינם מסתכמים לסכום ההחזר')
+                elif not declaration: st.error('יש לצרף תצהיר מעסיק חתום ומאומת')
+                else:
+                    fund_code=fund_override.strip() or fund
+                    if len(fund_code)!=30 or not fund_code.isdigit():
+                        st.error('קוד הקופה חייב להכיל 30 ספרות')
+                    else:
+                        output, filename=create_negative(source.getvalue(), employee_id=employee, fund_code=fund_code, salary_month=month.strip(), amount_parts=[a,b,c], bank={'bank':bank.strip(),'branch':branch.strip(),'account':account.strip()},reason_code=reason_code.strip(),declaration_filename=declaration.name,employee_approval_filename=approval.name if approval else '')
+                        st.warning('קובץ לבדיקה בלבד: טרם אומת מול XSD ייעודי לממשק שלילי. צירוף התצהיר מתבצע בנפרד במסלקה; ציון שמו ב-XML אינו העלאתו.')
+                        st.download_button('הורדת DAT לבדיקה',output,file_name=filename,mime='application/xml')
+                        st.download_button('הורדת תצהיר מצורף',declaration.getvalue(),file_name=declaration.name,mime='application/pdf')
+                        if approval: st.download_button('הורדת אישור עובד',approval.getvalue(),file_name=approval.name,mime='application/pdf')
+        except Exception as exc:
+            st.error(f'לא ניתן להכין ממשק שלילי: {exc}')
+    st.stop()
+
 st.title("תיקון קובץ XML והפקת טבלת עובדים")
 
 st.caption(
@@ -224,7 +294,7 @@ with st.sidebar:
     employer_option = st.selectbox(
         "סוג מעסיק",
         [
-            "ללא שינוי",
+            "זיהוי אוטומטי לפי מספר המעסיק",
             "ח.פ – קוד 1",
             "עוסק מורשה – קוד 5",
         ],

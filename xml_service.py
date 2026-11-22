@@ -128,6 +128,23 @@ def validate_xsd(tree, schema: etree.XMLSchema) -> list[dict]:
     return errors
 
 
+def infer_employer_id_type(identifier: str) -> tuple[str | None, str]:
+    """Conservative prefix-based classification, not registry verification."""
+    digits = ''.join(c for c in str(identifier or '') if c.isdigit()).zfill(9)
+    if len(digits) != 9:
+        return None, 'מספר מזהה שאינו בן 9 ספרות'
+    if digits.startswith(('51', '52', '56')):
+        return '1', 'זוהתה קידומת של חברה (זיהוי לפי מבנה מספר בלבד)'
+    if digits.startswith('58'):
+        return None, 'זוהתה קידומת עמותה 58; יש לאמת את קוד סוג המזהה במפרט המסלקה'
+    if digits.startswith(('53','54','55','57')):
+        return None, 'קידומת תאגיד/שותפות; נדרש אימות סוג המזהה'
+    # Israeli ID checksum is useful, but does not establish tax registration.
+    if sum((int(c) * (1 if i % 2 == 0 else 2) - 9 if int(c) * (1 if i % 2 == 0 else 2) > 9 else int(c) * (1 if i % 2 == 0 else 2)) for i,c in enumerate(digits)) % 10 == 0:
+        return '5', 'מספר במבנה תעודת זהות; לא מהווה אישור רישום כעוסק'
+    return None, 'המספר אינו מזוהה בוודאות או ספרת הביקורת אינה תקינה'
+
+
 def validate_and_repair(
     data: bytes,
     employer_id_type: str | None = None,
@@ -173,31 +190,21 @@ def validate_and_repair(
                 )
             )
 
-    # סוג מזהה מעסיק:
-    # 1 = ח.פ
-    # 5 = עוסק מורשה
-    if employer_id_type in {"1", "5"}:
-        for idx, node in enumerate(
-            _find_all(root, "SUG-MEZAHE-MAASIK"),
-            start=1,
-        ):
+    # Identify each employer separately; never classify from the withholding file number.
+    for idx, transfer in enumerate(_find_all(root, 'PirteiHaavaratKsafim'), start=1):
+        number = _text(_find_direct(transfer, 'MISPAR-ZIHUY-MAASIK'))
+        suggested, explanation = infer_employer_id_type(number)
+        target = employer_id_type if employer_id_type in {'1','5'} else suggested
+        node = _find_direct(transfer, 'SUG-MEZAHE-MAASIK')
+        if node is None:
+            changes.append(Change('error','employer_id_type_missing',f'מעסיק #{idx}',number,'לא שונה','שדה סוג מזהה מעסיק חסר'))
+        elif target is None:
+            changes.append(Change('warning','employer_id_type_review',f'מעסיק #{idx}',_text(node),'לא שונה',explanation))
+        elif _text(node) != target:
             before = _text(node)
+            node.text = target
+            changes.append(Change('fixed','employer_id_type',f'מעסיק #{idx}: {number}',before,target,explanation if employer_id_type is None else 'בחירה ידנית של המשתמש'))
 
-            if before != employer_id_type:
-                node.text = employer_id_type
-
-                changes.append(
-                    Change(
-                        "fixed",
-                        "employer_id_type",
-                        f"SUG-MEZAHE-MAASIK #{idx}",
-                        before,
-                        employer_id_type,
-                        "עודכן בהתאם לסוג המעסיק שנבחר.",
-                    )
-                )
-    
-   
     # תיקון אוטומטי של ערכי 0 בפרטי התשלום
     for field_name in (
         "SUG-CHESHBON-KOLET-TASHLUM",
