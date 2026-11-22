@@ -156,6 +156,37 @@ def extract_single_sheet_excel(
     return output.getvalue()
 
 
+def prepare_detailed_excel(excel_bytes: bytes) -> bytes:
+    """Keep operational report sheets, without corrections or XSD error logs."""
+    workbook = load_workbook(BytesIO(excel_bytes))
+    excluded = ("תיקונים", "שגיאות XSD", "שגיאות xsd")
+    for sheet_name in list(workbook.sheetnames):
+        if any(term.casefold() in sheet_name.casefold() for term in excluded):
+            if len(workbook.sheetnames) > 1:
+                del workbook[sheet_name]
+    output = BytesIO()
+    workbook.save(output)
+    return output.getvalue()
+
+
+def get_employer_report_filename(tree, suffix: str) -> str:
+    root = tree.getroot()
+    names = root.xpath("//*[local-name()='SHEM-MAASIK']")
+    employer = (names[0].text or "").strip() if names else ""
+    employer = employer or "מעסיק"
+    employer = re.sub(r'[\\/:*?"<>|\r\n]+', ' ', employer).strip().rstrip('.')
+    months = set()
+    for node in root.xpath("//*[local-name()='CHODESH-MASKORET']"):
+        value = (node.text or "").strip()
+        match = re.match(r"^(\d{4})[-/]?(\d{2})", value)
+        if match and 1 <= int(match.group(2)) <= 12:
+            months.add(f"{match.group(2)}{match.group(1)}")
+    month_label = next(iter(months)) if len(months) == 1 else (
+        "מספר חודשי שכר" if months else "חודש לא ידוע"
+    )
+    return f"{employer} {month_label} - {suffix}.xlsx"
+
+
 # ============================================================
 # הגדרות
 # ============================================================
@@ -585,6 +616,8 @@ summary_excel_bytes = extract_single_sheet_excel(
     "סיכום קופות והפקדות",
 )
 
+detailed_excel_bytes = prepare_detailed_excel(excel_bytes)
+
 
 # ============================================================
 # שם בסיס לקבצים
@@ -625,10 +658,8 @@ with b2:
 
     st.download_button(
         "הורדת Excel עובדים והפרשות",
-        data=excel_bytes,
-        file_name=(
-            f"{base}_EMPLOYEES_AND_CONTRIBUTIONS.xlsx"
-        ),
+        data=detailed_excel_bytes,
+        file_name=get_employer_report_filename(fixed_tree, "פירוט מלא"),
         mime=(
             "application/vnd.openxmlformats-officedocument."
             "spreadsheetml.sheet"
